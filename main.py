@@ -142,7 +142,7 @@ class EyeTrackerApp:
                     duration = self.ts[1] - self.ts[0]
                     second_label.config(text=f'{duration:.2f}')
                     print(duration)
-                    if duration >= 3:
+                    if duration >= 2:
                         playsound.playsound('alert.mp3', True)
             else:
                 self.ts[0] = 0
