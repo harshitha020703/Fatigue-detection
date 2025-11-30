@@ -4,6 +4,7 @@ import pyautogui
 from tkinter import messagebox
 import time
 import playsound
+import winsound
 
 ts = [0,0,False]
 
@@ -50,7 +51,7 @@ while True:
                 print(duration)
                 
                 if duration>=3:
-                    playsound.playsound('alert.mp3', True)
+                    winsound.playsound('alert.mp3', True)
             
         else:
             
@@ -76,3 +77,4 @@ while True:
                 
     cv2.imshow('Eye tracker- Controlled Mouse', img)
     cv2.waitKey(1)
+
