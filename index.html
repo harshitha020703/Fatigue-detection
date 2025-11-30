@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Driver Fatigue Detection 🚗😴</title>
+
+  <style>
+    body {
+      background: #0a0f24;
+      color: #fff;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-family: Arial;
+    }
+    h1 {
+      margin: 15px 0;
+      text-align: center;
+    }
+    #container {
+      position: relative;
+      width: 640px;
+      max-width: 95vw;
+    }
+    #output, video {
+      width: 100%;
+      border-radius: 10px;
+    }
+    #alert {
+      position: absolute;
+      bottom: 15px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 0, 0, 0.9);
+      padding: 10px 15px;
+      border-radius: 8px;
+      font-size: 20px;
+      font-weight: bold;
+      display: none;
+    }
+    #status {
+      margin-top: 10px;
+      font-size: 16px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Fatigue Detection System 🚨</h1>
+  <p>Allow camera & keep your face visible</p>
+
+  <div id="container">
+    <video id="video" autoplay playsinline style="display:none;"></video>
+    <canvas id="output"></canvas>
+    <div id="alert">⚠ Drowsy! Eyes closed too long ⚠</div>
+  </div>
+
+  <div id="status">
+    EAR: <span id="ear">--</span> | Status: <span id="state">--</span>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils"></script>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('output');
+    const ctx = canvas.getContext('2d');
+    const alertBox = document.getElementById('alert');
+    const earTxt = document.getElementById('ear');
+    const stateTxt = document.getElementById('state');
+
+    const EAR_THRESH = 0.21; 
+    const DROWSY_MS = 1200;
+    let closeStart = null;
+
+    function dist(a,b){
+      return Math.hypot(a.x-b.x, a.y-b.y);
+    }
+
+    function ear(pts){
+      const A = dist(pts[1], pts[5]);
+      const B = dist(pts[2], pts[4]);
+      const C = dist(pts[0], pts[3]);
+      return (A + B) / (2*C);
+    }
+
+    function onResults(results){
+      if(!results.multiFaceLandmarks){
+        alertBox.style.display = "none";
+        closeStart = null;
+        return;
+      }
+
+      const lm = results.multiFaceLandmarks[0];
+      const idxL=[33,160,158,133,153,144];
+      const idxR=[263,387,385,362,380,373];
+      const left = idxL.map(i=>lm[i]);
+      const right = idxR.map(i=>lm[i]);
+      const e=(ear(left)+ear(right))/2;
+
+      earTxt.textContent = e.toFixed(3);
+
+      canvas.width = results.image.width;
+      canvas.height = results.image.height;
+      ctx.drawImage(results.image,0,0,canvas.width,canvas.height);
+
+      ctx.fillStyle = "#00FFAA";
+      [...left,...right].forEach(pt=>{
+        ctx.beginPath();
+        ctx.arc(pt.x*canvas.width, pt.y*canvas.height,3,0,2*Math.PI);
+        ctx.fill();
+      });
+
+      const now = performance.now();
+      if(e < EAR_THRESH){
+        stateTxt.textContent = "Closed";
+        if(closeStart===null) closeStart = now;
+        if(now-closeStart >= DROWSY_MS){
+          alertBox.style.display="block";
+        }
+      }else{
+        stateTxt.textContent = "Open";
+        closeStart=null;
+        alertBox.style.display="none";
+      }
+    }
+
+    const fm = new FaceMesh.FaceMesh({
+      locateFile:(file)=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    });
+
+    fm.setOptions({
+      refineLandmarks: true,
+      maxNumFaces: 1,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+    fm.onResults(onResults);
+
+    const camera = new CameraUtils.Camera(video,{
+      onFrame: async ()=>{ await fm.send({image:video}); },
+      width:640, height:480
+    });
+    camera.start();
+  </script>
+</body>
+</html>
