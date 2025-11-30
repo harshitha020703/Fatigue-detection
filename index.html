@@ -1,153 +1,128 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Driver Fatigue Detection 🚗😴</title>
-  <style>
-    body {
-      background: #07111f;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      color: white;
-      font-family: Arial, sans-serif;
-      margin: 0;
-    }
-    h1 {
-      margin-top: 20px;
-      text-align: center;
-    }
-    #container {
-      position: relative;
-      width: 640px;
-      max-width: 95vw;
-      margin-top: 15px;
-    }
-    canvas {
-      width: 100%;
-      border-radius: 10px;
-    }
-    #alert {
-      position: absolute;
-      bottom: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: red;
-      padding: 8px 16px;
-      border-radius: 8px;
-      display: none;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>Fatigue Detection System 😴</title>
+<style>
+  body {
+    background:#08111e; color:white; text-align:center;
+    font-family:Arial;margin:0;padding:0;
+    display:flex; flex-direction:column;
+    align-items:center;
+  }
+  #container{ position:relative; width:640px; max-width:95vw; margin-top:20px;}
+  canvas{ width:100%; border-radius:10px;}
+  #alert {
+    position:absolute;bottom:15px;left:50%;
+    transform:translateX(-50%);
+    background:red;padding:10px 15px;
+    border-radius:10px;display:none;
+    font-weight:bold;
+  }
+</style>
 </head>
 
 <body>
+<h1>Fatigue Detection System 🚨</h1>
+<p>Allow camera access ⬇</p>
 
-  <h1>Fatigue Detection System 🚨</h1>
-  <p>Allow camera access 👇</p>
+<div id="container">
+  <canvas id="canvas"></canvas>
+  <div id="alert">⚠ Drowsy Alert ⚠</div>
+</div>
 
-  <div id="container">
-    <canvas id="canvas"></canvas>
-    <div id="alert">⚠ DROWSY: Eyes Closed!</div>
-  </div>
+<p>EAR: <span id="earVal">--</span> | Status: <span id="stateVal">--</span></p>
 
-  <p>EAR: <span id="earVal">--</span> | Status: <span id="statusVal">--</span></p>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/face_mesh.min.js"></script>
 
-  <!-- Latest Working MediaPipe Scripts -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/face_mesh.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.4/camera_utils.js"></script>
+<script>
+const video = document.createElement("video");
+video.playsInline = true;
+video.autoplay = true;
+document.body.appendChild(video);
 
-  <script>
-    const video = document.createElement("video");
-    video.style.display = "none";
-    document.body.appendChild(video);
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const alertBox = document.getElementById("alert");
+const earTxt = document.getElementById("earVal");
+const stateTxt = document.getElementById("stateVal");
 
-    const canvas = document.getElementById("canvas");
-    const ctx = canvas.getContext("2d");
-    const alertBox = document.getElementById("alert");
-    const earTxt = document.getElementById("earVal");
-    const statusTxt = document.getElementById("statusVal");
+const EAR_THRESHOLD = 0.22;
+const DROWSY_TIME = 1200;
+let closeStart = null;
 
-    const EAR_THRESHOLD = 0.22;
-    const DROWSY_TIME = 1300;
-    let closeStart = null;
+// Request Webcam Permission
+navigator.mediaDevices.getUserMedia({ video:true }).then(stream => {
+  video.srcObject = stream;
+}).catch(err => {
+  alert("Camera blocked! Enable camera in browser permissions.");
+  console.error(err);
+});
 
-    function dist(a, b) {
-      return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+// EAR calculation
+function dist(a, b){ return Math.hypot(a.x-b.x,a.y-b.y); }
+function EAR(lm, idx){
+  const p = idx.map(i=>lm[i]);
+  return (dist(p[1],p[5]) + dist(p[2],p[4])) / (2*dist(p[0],p[3]));
+}
+
+function onResults(res){
+  if(!res.multiFaceLandmarks) return;
+
+  canvas.width = res.image.width;
+  canvas.height = res.image.height;
+  ctx.drawImage(res.image,0,0);
+
+  const lm = res.multiFaceLandmarks[0];
+  const L=[33,160,158,133,153,144];
+  const R=[362,385,387,263,373,380];
+
+  const ear = (EAR(lm,L) + EAR(lm,R)) / 2;
+  earTxt.textContent = ear.toFixed(3);
+
+  [...L,...R].forEach(i=>{
+    const x=lm[i].x*canvas.width;
+    const y=lm[i].y*canvas.height;
+    ctx.beginPath();
+    ctx.arc(x,y,3,0,6.28);
+    ctx.fillStyle="#00FFAA";
+    ctx.fill();
+  });
+
+  const now = performance.now();
+  if(ear < EAR_THRESHOLD){
+    stateTxt.textContent = "Closed";
+    if(!closeStart) closeStart = now;
+    if(now - closeStart > DROWSY_TIME){
+      alertBox.style.display="block";
     }
+  } else {
+    stateTxt.textContent = "Open";
+    closeStart = null;
+    alertBox.style.display="none";
+  }
+}
 
-    function getEAR(lm, ids) {
-      const p = ids.map(i => lm[i]);
-      return (dist(p[1], p[5]) + dist(p[2], p[4])) / (2 * dist(p[0], p[3]));
-    }
+// FaceMesh init
+const fm = new FaceMesh.FaceMesh({
+  locateFile:file=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/${file}`
+});
+fm.setOptions({
+  refineLandmarks:true,
+  maxNumFaces:1,
+  minDetectionConfidence:0.5,
+  minTrackingConfidence:0.5
+});
 
-    function onResults(results) {
-      if (!results.multiFaceLandmarks) {
-        alertBox.style.display = "none";
-        closeStart = null;
-        return;
-      }
-
-      const lm = results.multiFaceLandmarks[0];
-      canvas.width = results.image.width;
-      canvas.height = results.image.height;
-      ctx.drawImage(results.image, 0, 0);
-
-      const left = [33, 160, 158, 133, 153, 144];
-      const right = [362, 385, 387, 263, 373, 380];
-
-      const lEAR = getEAR(lm, left);
-      const rEAR = getEAR(lm, right);
-      const ear = (lEAR + rEAR) / 2;
-
-      earTxt.innerText = ear.toFixed(3);
-
-      ctx.fillStyle = "#00FFAA";
-      [...left, ...right].forEach(i => {
-        let x = lm[i].x * canvas.width;
-        let y = lm[i].y * canvas.height;
-        ctx.beginPath();
-        ctx.arc(x, y, 3, 0, Math.PI * 2);
-        ctx.fill();
-      });
-
-      const now = performance.now();
-      if (ear < EAR_THRESHOLD) {
-        statusTxt.innerText = "Closed";
-        if (!closeStart) closeStart = now;
-        if (now - closeStart > DROWSY_TIME) {
-          alertBox.style.display = "block";
-        }
-      } else {
-        statusTxt.innerText = "Open";
-        closeStart = null;
-        alertBox.style.display = "none";
-      }
-    }
-
-    const faceMesh = new FaceMesh.FaceMesh({
-      locateFile: file => 
-        `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/${file}`
-    });
-
-    faceMesh.setOptions({
-      maxNumFaces: 1,
-      refineLandmarks: true,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
-    });
-
-    faceMesh.onResults(onResults);
-
-    const camera = new CameraUtils.Camera(video, {
-      onFrame: async () => {
-        await faceMesh.send({ image: video });
-      },
-      width: 640,
-      height: 480
-    });
-
-    camera.start();
-  </script>
-
+// Processing Loop
+async function loop(){
+  if(video.readyState >= 2){
+    await fm.send({image:video});
+  }
+  requestAnimationFrame(loop);
+}
+fm.onResults(onResults);
+video.addEventListener("loadeddata", loop);
+</script>
 </body>
 </html>
